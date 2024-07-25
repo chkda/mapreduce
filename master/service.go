@@ -5,6 +5,9 @@ import (
 	"sync"
 
 	pbm "github.com/chkda/mapreduce/rpc/master"
+	pbw "github.com/chkda/mapreduce/rpc/worker"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Service struct {
@@ -14,8 +17,9 @@ type Service struct {
 }
 
 type Worker struct {
-	Uuid string
-	IP   string
+	Uuid   string
+	IP     string
+	Client pbw.WorkerClient
 }
 
 func New() *Service {
@@ -31,6 +35,12 @@ func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo
 		Uuid: workerInfo.GetUuid(),
 		IP:   workerInfo.GetIp(),
 	}
+	conn, err := grpc.Dial(worker.IP, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	client := pbw.NewWorkerClient(conn)
+	worker.Client = client
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	s.Workers[worker.Uuid] = worker
@@ -56,4 +66,9 @@ func (s *Service) UpdateDataNodes(ctx context.Context, nodesInfo *pbm.DataNodesI
 	return &pbm.Ack{
 		Success: true,
 	}, nil
+}
+
+func (s *Service) Trigger(ctx context.Context, taskRequest *pbm.TaskRequest) (*pbm.Ack, error) {
+
+	return nil, nil
 }

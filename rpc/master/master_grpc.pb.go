@@ -30,7 +30,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MasterClient interface {
-	Trigger(ctx context.Context, in *Job, opts ...grpc.CallOption) (*Ack, error)
+	Trigger(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*Ack, error)
 	RegisterWorker(ctx context.Context, in *WorkerInfo, opts ...grpc.CallOption) (*Ack, error)
 	UpdateMapResult(ctx context.Context, in *MapResult, opts ...grpc.CallOption) (*Ack, error)
 	UpdateDataNodes(ctx context.Context, in *DataNodesInfo, opts ...grpc.CallOption) (*Ack, error)
@@ -45,7 +45,7 @@ func NewMasterClient(cc grpc.ClientConnInterface) MasterClient {
 	return &masterClient{cc}
 }
 
-func (c *masterClient) Trigger(ctx context.Context, in *Job, opts ...grpc.CallOption) (*Ack, error) {
+func (c *masterClient) Trigger(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*Ack, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Ack)
 	err := c.cc.Invoke(ctx, Master_Trigger_FullMethodName, in, out, cOpts...)
@@ -99,7 +99,7 @@ func (c *masterClient) UpdateReduceResult(ctx context.Context, in *ReduceResult,
 // All implementations must embed UnimplementedMasterServer
 // for forward compatibility
 type MasterServer interface {
-	Trigger(context.Context, *Job) (*Ack, error)
+	Trigger(context.Context, *TaskRequest) (*Ack, error)
 	RegisterWorker(context.Context, *WorkerInfo) (*Ack, error)
 	UpdateMapResult(context.Context, *MapResult) (*Ack, error)
 	UpdateDataNodes(context.Context, *DataNodesInfo) (*Ack, error)
@@ -111,7 +111,7 @@ type MasterServer interface {
 type UnimplementedMasterServer struct {
 }
 
-func (UnimplementedMasterServer) Trigger(context.Context, *Job) (*Ack, error) {
+func (UnimplementedMasterServer) Trigger(context.Context, *TaskRequest) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Trigger not implemented")
 }
 func (UnimplementedMasterServer) RegisterWorker(context.Context, *WorkerInfo) (*Ack, error) {
@@ -140,7 +140,7 @@ func RegisterMasterServer(s grpc.ServiceRegistrar, srv MasterServer) {
 }
 
 func _Master_Trigger_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Job)
+	in := new(TaskRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func _Master_Trigger_Handler(srv interface{}, ctx context.Context, dec func(inte
 		FullMethod: Master_Trigger_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MasterServer).Trigger(ctx, req.(*Job))
+		return srv.(MasterServer).Trigger(ctx, req.(*TaskRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
