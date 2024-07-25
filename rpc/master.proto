@@ -3,9 +3,15 @@ syntax = "proto3";
 option go_package = "github.com/chkda/mapreduce/rpc/master";
 
 service Master{
+    rpc Trigger(Job) returns (Ack);
     rpc RegisterWorker(WorkerInfo) returns (Ack);
     rpc UpdateMapResult(MapResult) returns (Ack);
     rpc UpdateDataNodes(DataNodesInfo) returns (Ack);
+    rpc UpdateReduceResult(ReduceResult) returns (Ack);
+}
+
+message Job {
+    string filename = 1;
 }
 
 message WorkerInfo {
@@ -14,6 +20,11 @@ message WorkerInfo {
 }
 
 message MapResult {
+    string uuid = 1;
+    repeated string filenames = 2;
+}
+
+message ReduceResult {
     string uuid = 1;
     string filename = 2;
 }

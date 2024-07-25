@@ -56,7 +56,6 @@ message Ack {
     bool success = 1;
 }
 
-
 message InterMediateDataRequest {
     string filename = 1;
 }
