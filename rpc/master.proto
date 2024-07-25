@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+option go_package = "github.com/chkda/mapreduce/rpc/master";
+
+service Master{
+    rpc RegisterWorker(WorkerInfo) returns (Ack);
+    rpc UpdateMapResult(MapResult) returns (Ack);
+    rpc UpdateDataNodes(DataNodesInfo) returns (Ack);
+}
+
+message WorkerInfo {
+    string uuid = 1;
+    string ip = 2;
+}
+
+message MapResult {
+    string uuid = 1;
+    string filename = 2;
+}
+
+message Ack{
+    bool success=1;
+}
+
+message DataNodesInfo{
+    repeated NodeFileInfo nodes = 1;
+}
+
+message NodeFileInfo{
+    string uuid = 1;
+    string ip = 2;
+    repeated string files = 3;
+}

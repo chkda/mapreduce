@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+option go_package = "github.com/chkda/mapreduce/rpc/worker";
+
+service Worker{
+    rpc AssignMap(MapTask) returns (Ack);
+    rpc AssignReduce(ReduceTask) returns (Ack);
+    rpc HealthCheck(HealthcheckRequest) returns (Ack);
+    rpc GetStatus(StatusRequest) returns (StatusResponse);
+    rpc GetIntermediateData(InterMediateDataRequest) returns (InterMediateDataResponse);
+}
+
+enum Status {
+    IDLE = 0;
+    IN_PROGRESS = 1;
+    COMPLETED = 2;
+    FAILED = 3;
+}
+
+message StatusRequest {
+    string task_id = 1;
+}
+
+message StatusResponse{
+    Status status = 1;
+    string task_id = 2;
+    string error_message = 3;
+}
+
+message HealthcheckRequest {
+
+}
+
+message MapTask{
+    string task_id = 1;
+    string filename = 2;
+    int32 num_reduce = 3;
+}
+
+message ReduceTask {
+    string task_id = 1;
+    DataNodesInfo datanodes = 2;
+}
+
+message DataNodesInfo{
+    repeated NodeFileInfo nodes = 1;
+}
+
+message NodeFileInfo{
+    string uuid = 1;
+    string ip = 2;
+    repeated string files = 3;
+}
+
+message Ack {
+    bool success = 1;
+}
+
+
+message InterMediateDataRequest {
+    string filename = 1;
+}
+
+message InterMediateDataResponse {
+    bytes data = 1;
+}
