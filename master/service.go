@@ -2,6 +2,8 @@ package master
 
 import (
 	"context"
+	"errors"
+	"hash/fnv"
 	"log"
 	"sync"
 	"time"
@@ -19,12 +21,20 @@ const (
 	WORKER_DEAD
 )
 
+var (
+	ErrTaskIdDoesnotExist         = errors.New("taskId doesn't exist")
+	ErrDeadWorkerThresholdReached = errors.New("dead workers have exceeded more than threshold")
+)
+
 type Service struct {
-	Workers        map[string]*Worker
-	DFS            *DFS
-	Mu             sync.RWMutex
-	MapTasks       map[string]*MapTask
-	ActiveMapTasks int
+	Workers              map[string]*Worker
+	DFS                  *DFS
+	Mu                   sync.RWMutex
+	MapTasks             map[string]*MapTask
+	DeadWorkersThreshold int
+	DeadWorkers          []string
+	NumReduce            int
+	ActiveMapTasks       int
 }
 
 type Worker struct {
@@ -65,12 +75,14 @@ func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo
 func (s *Service) UpdateMapResult(ctx context.Context, mapResult *pbm.MapResult) (*pbm.Ack, error) {
 	mapTaskId := mapResult.GetUuid()
 	s.Mu.Lock()
-	// TODO: Check if taskId exists
-	mapTask := s.MapTasks[mapTaskId]
+	defer s.Mu.Unlock()
+	mapTask, ok := s.MapTasks[mapTaskId]
+	if !ok {
+		return nil, ErrTaskIdDoesnotExist
+	}
 	mapTask.TaskStatus = COMPLETE
 	mapTask.OutputFiles = mapResult.GetFilenames()
 	s.ActiveMapTasks--
-	s.Mu.Unlock()
 	return &pbm.Ack{
 		Success: true,
 	}, nil
@@ -97,6 +109,9 @@ func (s *Service) UpdateDataNodes(ctx context.Context, nodesInfo *pbm.DataNodesI
 
 func (s *Service) Trigger(ctx context.Context, taskRequest *pbm.TaskRequest) (*pbm.Ack, error) {
 	filename := taskRequest.GetFilename()
+	s.Mu.Lock()
+	s.NumReduce = int(taskRequest.GetNumReduce())
+	s.Mu.Unlock()
 	go s.processData(filename)
 	return &pbm.Ack{
 		Success: true,
@@ -109,6 +124,24 @@ func (s *Service) processData(filename string) {
 	for {
 		// TODO : check active worker, map task states and reduce states
 		s.checkActiveWorkers()
+		s.Mu.Lock()
+		deadWorkers := s.DeadWorkers
+		s.Mu.Unlock()
+		if len(deadWorkers) > s.DeadWorkersThreshold {
+			log.Println("Dead Workers:", deadWorkers)
+			log.Fatal(ErrDeadWorkerThresholdReached)
+		}
+
+		s.Mu.Lock()
+		for _, task := range s.MapTasks {
+			workerId := task.WorkerID
+			worker := s.Workers[workerId]
+			if worker.State == WORKER_DEAD {
+				task.TaskStatus = FAILED
+				continue
+			}
+		}
+		s.Mu.Unlock()
 	}
 }
 
@@ -148,11 +181,33 @@ func (s *Service) startMapTask(task *MapTask, client pbw.WorkerClient) {
 	return
 }
 
+func (s *Service) startReducePhase() {
+	mapTasksCopy := make(map[string]*MapTask)
+	s.Mu.RLock()
+	for k, v := range s.MapTasks {
+		mapTasksCopy[k] = v
+	}
+	s.Mu.RUnlock()
+
+	// workerIDHashMap := s.calculateWorkerIndex()
+}
+
+func (s *Service) calculateWorkerIndex() map[uint32]string {
+	workerIDHashMap := make(map[uint32]string)
+	s.Mu.RLock()
+	for workerId, _ := range s.Workers {
+		hashId := hash(workerId) % uint32(s.NumReduce)
+		workerIDHashMap[hashId] = workerId
+	}
+	s.Mu.RUnlock()
+	return workerIDHashMap
+}
+
 func (s *Service) checkActiveWorkers() {
 	workerCopy := make(map[string]*Worker)
 	s.Mu.RLock()
-	for workerId, worker := range s.Workers {
-		workerCopy[workerId] = worker
+	for k, v := range s.Workers {
+		workerCopy[k] = v
 	}
 	s.Mu.RUnlock()
 	var wg sync.WaitGroup
@@ -192,5 +247,12 @@ func (s *Service) updateWorkerState(workerId string, alive bool) {
 		return
 	}
 	worker.State = WORKER_DEAD
+	s.DeadWorkers = append(s.DeadWorkers, workerId)
 	return
+}
+
+func hash(s string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return h.Sum32()
 }
