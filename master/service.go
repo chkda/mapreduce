@@ -2,6 +2,7 @@ package master
 
 import (
 	"context"
+	"log"
 	"sync"
 
 	pbm "github.com/chkda/mapreduce/rpc/master"
@@ -11,9 +12,11 @@ import (
 )
 
 type Service struct {
-	Workers map[string]*Worker
-	DFS     *DFS
-	Mu      sync.Mutex
+	Workers        map[string]*Worker
+	DFS            *DFS
+	Mu             sync.Mutex
+	MapTasks       map[string]*MapTask
+	ActiveMapTasks int
 }
 
 type Worker struct {
@@ -52,23 +55,61 @@ func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo
 
 func (s *Service) UpdateDataNodes(ctx context.Context, nodesInfo *pbm.DataNodesInfo) (*pbm.Ack, error) {
 	nodes := nodesInfo.GetNodes()
-	datanodes := make(map[string]*DataNode)
+	fileName := nodesInfo.GetFilename()
+	datanodes := make([]*DataNode, 0, 4)
 	for _, node := range nodes {
 		dataNode := &DataNode{
 			Uuid:      node.GetUuid(),
 			Filenames: node.GetFiles(),
 		}
-		datanodes[node.GetUuid()] = dataNode
+		datanodes = append(datanodes, dataNode)
 	}
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
-	s.DFS.Nodes = datanodes
+	s.DFS.FileChunks[fileName] = datanodes
 	return &pbm.Ack{
 		Success: true,
 	}, nil
 }
 
 func (s *Service) Trigger(ctx context.Context, taskRequest *pbm.TaskRequest) (*pbm.Ack, error) {
+	filename := taskRequest.GetFilename()
+	go s.processData(filename)
+	return &pbm.Ack{
+		Success: true,
+	}, nil
+}
 
-	return nil, nil
+func (s *Service) processData(filename string) {
+	s.startMapPhase(filename)
+}
+
+func (s *Service) startMapPhase(filename string) {
+	dataNodes, err := s.DFS.GetDataNodes(filename)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	// failureChan := make(chan string)
+
+	for _, node := range dataNodes {
+		workerClient := s.Workers[node.Uuid].Client
+		for i := 0; i < len(node.Filenames); i++ {
+			mapTask := NewMapTask(node.Filenames[i], node.Uuid)
+			go func(task *MapTask, client pbw.WorkerClient) {
+				mapRequest := &pbw.MapTask{
+					TaskId:    task.ID,
+					Filename:  task.TaskFile,
+					NumReduce: 0, // TODO : Look at this later
+				}
+				ack, err := client.AssignMap(context.Background(), mapRequest)
+				if err != nil || !ack.Success {
+					task.TaskStatus = FAILED
+					return
+				}
+				task.TaskStatus = INPROGRESS
+				return
+			}(mapTask, workerClient)
+		}
+	}
 }

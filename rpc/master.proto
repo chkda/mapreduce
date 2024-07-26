@@ -23,7 +23,8 @@ message WorkerInfo {
 
 message MapResult {
     string uuid = 1;
-    repeated string filenames = 2;
+    string task_file = 2;
+    repeated string filenames = 3;
 }
 
 message ReduceResult {
@@ -36,7 +37,8 @@ message Ack{
 }
 
 message DataNodesInfo{
-    repeated NodeFileInfo nodes = 1;
+    string filename = 1;
+    repeated NodeFileInfo nodes = 2;
 }
 
 message NodeFileInfo{

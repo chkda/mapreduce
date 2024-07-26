@@ -1,21 +1,35 @@
 package master
 
+import "errors"
+
+var (
+	ErrFileNotFound = errors.New("file not found")
+)
+
 type DataNode struct {
 	Filenames []string
 	Uuid      string
 }
 
-type HDFSNodeReader interface {
-	GetDataNodes(string) (*DataNode, error)
+type HDFSReader interface {
+	GetDataNodes(string) ([]*DataNode, error)
 }
 
 // Distributed File System
 type DFS struct {
-	Nodes map[string]*DataNode
+	FileChunks map[string][]*DataNode
 }
 
 func NewDFS() *DFS {
 	return &DFS{
-		Nodes: make(map[string]*DataNode),
+		FileChunks: make(map[string][]*DataNode),
 	}
+}
+
+func (d *DFS) GetDataNodes(filename string) ([]*DataNode, error) {
+	chunks, ok := d.FileChunks[filename]
+	if !ok {
+		return nil, ErrFileNotFound
+	}
+	return chunks, nil
 }
