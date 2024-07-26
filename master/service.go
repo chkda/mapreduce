@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"sync"
+	"time"
 
 	pbm "github.com/chkda/mapreduce/rpc/master"
 	pbw "github.com/chkda/mapreduce/rpc/worker"
@@ -11,10 +12,17 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+type WorkerStatus int
+
+const (
+	WORKER_ALIVE WorkerStatus = iota
+	WORKER_DEAD
+)
+
 type Service struct {
 	Workers        map[string]*Worker
 	DFS            *DFS
-	Mu             sync.Mutex
+	Mu             sync.RWMutex
 	MapTasks       map[string]*MapTask
 	ActiveMapTasks int
 }
@@ -22,6 +30,7 @@ type Service struct {
 type Worker struct {
 	Uuid   string
 	IP     string
+	State  WorkerStatus
 	Client pbw.WorkerClient
 }
 
@@ -35,8 +44,9 @@ func New() *Service {
 
 func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo) (*pbm.Ack, error) {
 	worker := &Worker{
-		Uuid: workerInfo.GetUuid(),
-		IP:   workerInfo.GetIp(),
+		Uuid:  workerInfo.GetUuid(),
+		IP:    workerInfo.GetIp(),
+		State: WORKER_ALIVE,
 	}
 	conn, err := grpc.Dial(worker.IP, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -55,9 +65,10 @@ func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo
 func (s *Service) UpdateMapResult(ctx context.Context, mapResult *pbm.MapResult) (*pbm.Ack, error) {
 	mapTaskId := mapResult.GetUuid()
 	s.Mu.Lock()
+	// TODO: Check if taskId exists
 	mapTask := s.MapTasks[mapTaskId]
 	mapTask.TaskStatus = COMPLETE
-	mapTask.Result = mapResult.GetFilenames()
+	mapTask.OutputFiles = mapResult.GetFilenames()
 	s.ActiveMapTasks--
 	s.Mu.Unlock()
 	return &pbm.Ack{
@@ -94,6 +105,11 @@ func (s *Service) Trigger(ctx context.Context, taskRequest *pbm.TaskRequest) (*p
 
 func (s *Service) processData(filename string) {
 	s.startMapPhase(filename)
+
+	for {
+		// TODO : check active worker, map task states and reduce states
+		s.checkActiveWorkers()
+	}
 }
 
 func (s *Service) startMapPhase(filename string) {
@@ -109,21 +125,72 @@ func (s *Service) startMapPhase(filename string) {
 		for i := 0; i < len(node.Filenames); i++ {
 			mapTask := NewMapTask(node.Filenames[i], node.Uuid)
 			s.MapTasks[mapTask.ID] = mapTask
-			s.ActiveMapTasks++
-			go func(task *MapTask, client pbw.WorkerClient) {
-				mapRequest := &pbw.MapTask{
-					TaskId:    task.ID,
-					Filename:  task.TaskFile,
-					NumReduce: 0, // TODO : Look at this later
-				}
-				ack, err := client.AssignMap(context.Background(), mapRequest)
-				if err != nil || !ack.Success {
-					task.TaskStatus = FAILED
-					return
-				}
-				task.TaskStatus = INPROGRESS
-				return
-			}(mapTask, workerClient)
+			go s.startMapTask(mapTask, workerClient)
 		}
 	}
+}
+
+func (s *Service) startMapTask(task *MapTask, client pbw.WorkerClient) {
+	mapRequest := &pbw.MapTask{
+		TaskId:    task.ID,
+		Filename:  task.TaskFile,
+		NumReduce: 0, // TODO : Look at this later
+	}
+	ack, err := client.AssignMap(context.Background(), mapRequest)
+	if err != nil || !ack.Success {
+		task.TaskStatus = FAILED
+		return
+	}
+	task.TaskStatus = INPROGRESS
+	s.Mu.Lock()
+	s.ActiveMapTasks++
+	s.Mu.Unlock()
+	return
+}
+
+func (s *Service) checkActiveWorkers() {
+	workerCopy := make(map[string]*Worker)
+	s.Mu.RLock()
+	for workerId, worker := range s.Workers {
+		workerCopy[workerId] = worker
+	}
+	s.Mu.RUnlock()
+	var wg sync.WaitGroup
+	for workerId, worker := range workerCopy {
+		wg.Add(1)
+		go func(nodeId string, node *Worker) {
+			defer wg.Done()
+			isAlive := s.checkActiveWorker(node)
+			s.updateWorkerState(nodeId, isAlive)
+		}(workerId, worker)
+	}
+	wg.Wait()
+}
+
+func (s *Service) checkActiveWorker(worker *Worker) bool {
+	client := worker.Client
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := client.HealthCheck(ctx, &pbw.HealthcheckRequest{})
+	if err != nil {
+		log.Println(err)
+		return false
+	}
+	return true
+}
+
+func (s *Service) updateWorkerState(workerId string, alive bool) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+
+	worker, ok := s.Workers[workerId]
+	if !ok {
+		return
+	}
+	if alive {
+		worker.State = WORKER_ALIVE
+		return
+	}
+	worker.State = WORKER_DEAD
+	return
 }
