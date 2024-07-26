@@ -45,9 +45,21 @@ func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo
 	client := pbw.NewWorkerClient(conn)
 	worker.Client = client
 	s.Mu.Lock()
-	defer s.Mu.Unlock()
 	s.Workers[worker.Uuid] = worker
+	s.Mu.Unlock()
+	return &pbm.Ack{
+		Success: true,
+	}, nil
+}
 
+func (s *Service) UpdateMapResult(ctx context.Context, mapResult *pbm.MapResult) (*pbm.Ack, error) {
+	mapTaskId := mapResult.GetUuid()
+	s.Mu.Lock()
+	mapTask := s.MapTasks[mapTaskId]
+	mapTask.TaskStatus = COMPLETE
+	mapTask.Result = mapResult.GetFilenames()
+	s.ActiveMapTasks--
+	s.Mu.Unlock()
 	return &pbm.Ack{
 		Success: true,
 	}, nil
@@ -65,8 +77,8 @@ func (s *Service) UpdateDataNodes(ctx context.Context, nodesInfo *pbm.DataNodesI
 		datanodes = append(datanodes, dataNode)
 	}
 	s.Mu.Lock()
-	defer s.Mu.Unlock()
 	s.DFS.FileChunks[fileName] = datanodes
+	s.Mu.Unlock()
 	return &pbm.Ack{
 		Success: true,
 	}, nil
@@ -96,6 +108,8 @@ func (s *Service) startMapPhase(filename string) {
 		workerClient := s.Workers[node.Uuid].Client
 		for i := 0; i < len(node.Filenames); i++ {
 			mapTask := NewMapTask(node.Filenames[i], node.Uuid)
+			s.MapTasks[mapTask.ID] = mapTask
+			s.ActiveMapTasks++
 			go func(task *MapTask, client pbw.WorkerClient) {
 				mapRequest := &pbw.MapTask{
 					TaskId:    task.ID,
