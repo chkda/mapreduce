@@ -11,9 +11,7 @@ service Master{
 }
 
 message TaskRequest {
-    string task_id = 1;
-    string filename = 2;
-    int32 num_reduce = 3;
+    
 }
 
 message WorkerInfo {
