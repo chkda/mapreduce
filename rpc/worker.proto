@@ -43,8 +43,7 @@ message ReduceTask {
 }
 
 message DataNodesInfo{
-    string key = 1;
-    repeated NodeFileInfo nodes = 2;
+    repeated NodeFileInfo nodes = 1;
 }
 
 message NodeFileInfo{
