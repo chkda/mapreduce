@@ -5,6 +5,7 @@ import (
 	"errors"
 	"hash/fnv"
 	"log"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -35,6 +36,10 @@ type Service struct {
 	NumReduce            int
 	ActiveMapTasks       int
 	ActiveReduceTasks    int
+	MapTaskDoneChan      chan string
+	MapEndChan           chan bool
+	ReduceTaskDoneChan   chan string
+	ReduceEndChan        chan bool
 }
 
 func New(filename string, numReduce int, deadWorkerThreshold int) *Service {
@@ -45,6 +50,10 @@ func New(filename string, numReduce int, deadWorkerThreshold int) *Service {
 		Filename:             filename,
 		NumReduce:            numReduce,
 		DeadWorkersThreshold: deadWorkerThreshold,
+		MapTaskDoneChan:      make(chan string),
+		MapEndChan:           make(chan bool),
+		ReduceTaskDoneChan:   make(chan string),
+		ReduceEndChan:        make(chan bool),
 	}
 }
 
@@ -136,6 +145,24 @@ func (s *Service) checkIfDeadWorkersExceedsThreshold() bool {
 	return false
 }
 
+func (s *Service) notifyMapChannels(taskId string) {
+	s.MapTaskDoneChan <- taskId
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+	if s.ActiveMapTasks == 0 {
+		s.MapEndChan <- true
+	}
+}
+
+func (s *Service) notifyReduceChannels(taskId string) {
+	s.ReduceTaskDoneChan <- taskId
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+	if s.ActiveReduceTasks == 0 {
+		s.ReduceEndChan <- true
+	}
+}
+
 func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo) (*pbm.Ack, error) {
 	worker, err := NewWorker(
 		workerInfo.GetUuid(),
@@ -161,6 +188,7 @@ func (s *Service) UpdateMapResult(ctx context.Context, mapResult *pbm.MapResult)
 	mapTask.SetTaskStatus(COMPLETE)
 	mapTask.SetOutputFiles(mapResult.GetOutputFiles())
 	s.IncActiveMapTasks()
+	s.notifyMapChannels(mapTaskId)
 	return &pbm.Ack{
 		Success: true,
 	}, nil
@@ -193,27 +221,45 @@ func (s *Service) Trigger(ctx context.Context, taskRequest *pbm.TaskRequest) (*p
 }
 
 func (s *Service) processData() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
 	s.startMapPhase()
 
 	for {
 		// TODO : check active worker, map task states and reduce states
-		s.checkActiveWorkers()
-
-		if s.checkIfDeadWorkersExceedsThreshold() {
-			// log.Println("Dead Workers:", deadWorkers)
-			log.Fatal(ErrDeadWorkerThresholdReached)
-		}
-
-		s.Mu.Lock()
-		for _, task := range s.MapTasks {
-			workerId := task.WorkerID
-			worker := s.Workers[workerId]
-			if worker.State == WORKER_DEAD {
-				task.TaskStatus = FAILED
-				continue
+		select {
+		case taskId := <-s.MapTaskDoneChan:
+			log.Println("Map: Task Done:", taskId)
+		case <-s.MapEndChan:
+			s.startReducePhase()
+		case taskId := <-s.ReduceTaskDoneChan:
+			log.Println("Reduce: Task Done:", taskId)
+		case <-s.ReduceEndChan:
+			s.Mu.RLock()
+			for _, worker := range s.Workers {
+				worker.Close()
+			}
+			s.Mu.RUnlock()
+			log.Println("Process complete")
+			os.Exit(1)
+		case <-ticker.C:
+			s.checkActiveWorkers()
+			if s.checkIfDeadWorkersExceedsThreshold() {
+				// log.Println("Dead Workers:", deadWorkers)
+				log.Fatal(ErrDeadWorkerThresholdReached)
 			}
 		}
-		s.Mu.Unlock()
+
+		// s.Mu.Lock()
+		// for _, task := range s.MapTasks {
+		// 	workerId := task.WorkerID
+		// 	worker := s.Workers[workerId]
+		// 	if worker.State == WORKER_DEAD {
+		// 		task.TaskStatus = FAILED
+		// 		continue
+		// 	}
+		// }
+		// s.Mu.Unlock()
 
 	}
 }
@@ -314,7 +360,6 @@ func (s *Service) startReduceTask(task *ReduceTask, client pbw.WorkerClient) {
 	}
 	task.SetTaskStatus(INPROGRESS)
 	s.IncActiveReduceTasks()
-	return
 
 }
 
