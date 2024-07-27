@@ -24,7 +24,7 @@ message WorkerInfo {
 message MapResult {
     string uuid = 1;
     string task_file = 2;
-    repeated string filenames = 3;
+    repeated string output_files = 3;
 }
 
 message ReduceResult {

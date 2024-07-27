@@ -81,7 +81,7 @@ func (s *Service) UpdateMapResult(ctx context.Context, mapResult *pbm.MapResult)
 		return nil, ErrTaskIdDoesnotExist
 	}
 	mapTask.TaskStatus = COMPLETE
-	mapTask.OutputFiles = mapResult.GetFilenames()
+	mapTask.OutputFiles = mapResult.GetOutputFiles()
 	s.ActiveMapTasks--
 	return &pbm.Ack{
 		Success: true,
