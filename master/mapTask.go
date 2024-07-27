@@ -35,6 +35,12 @@ func NewMapTask(taskFile string, workerId string, numReduce int) *MapTask {
 	}
 }
 
+func (t *MapTask) GetId() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.ID
+}
+
 func (t *MapTask) GetTaskFile() string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()

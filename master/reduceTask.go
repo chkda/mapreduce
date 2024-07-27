@@ -24,6 +24,12 @@ func NewReduceTask(taskFiles []*ReduceDataNodeInfo, workerId string) *ReduceTask
 	}
 }
 
+func (t *ReduceTask) GetId() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.ID
+}
+
 func (t *ReduceTask) GetTaskFiles() []*ReduceDataNodeInfo {
 	t.mu.RLock()
 	defer t.mu.RUnlock()

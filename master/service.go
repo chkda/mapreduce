@@ -18,6 +18,7 @@ import (
 var (
 	ErrReducerIdNotInt            = errors.New("reducer id not an integer")
 	ErrTaskIdDoesnotExist         = errors.New("taskId doesn't exist")
+	ErrWorkerIdDoesnotExist       = errors.New("workerId doesn't exist")
 	ErrWrongFilenameFormat        = errors.New("wrong filename format")
 	ErrDeadWorkerThresholdReached = errors.New("dead workers have exceeded more than threshold")
 )
@@ -30,7 +31,7 @@ type Service struct {
 	MapTasks             map[string]*MapTask
 	ReduceTasks          map[string]*ReduceTask
 	DeadWorkersThreshold int
-	DeadWorkers          []string
+	DeadWorkers          map[string]bool
 	NumReduce            int
 	ActiveMapTasks       int
 	ActiveReduceTasks    int
@@ -47,10 +48,92 @@ func New(filename string, numReduce int, deadWorkerThreshold int) *Service {
 	}
 }
 
-func (s *Service) getFilename() string {
+func (s *Service) GetFilename() string {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
 	return s.Filename
+}
+
+func (s *Service) AddWorker(id string, worker *Worker) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	s.Workers[id] = worker
+}
+
+func (s *Service) GetWorker(workerId string) (*Worker, error) {
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+	worker, ok := s.Workers[workerId]
+	if !ok {
+		return nil, ErrWorkerIdDoesnotExist
+	}
+	return worker, nil
+}
+
+func (s *Service) GetMapTask(taskId string) (*MapTask, error) {
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+	task, ok := s.MapTasks[taskId]
+	if !ok {
+		return nil, ErrTaskIdDoesnotExist
+	}
+	return task, nil
+}
+
+func (s *Service) GetReduceTask(taskId string) (*ReduceTask, error) {
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+	task, ok := s.ReduceTasks[taskId]
+	if !ok {
+		return nil, ErrTaskIdDoesnotExist
+	}
+	return task, nil
+}
+
+func (s *Service) IncActiveMapTasks() {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	s.ActiveMapTasks++
+}
+
+func (s *Service) DecActiveMapTasks() {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	s.ActiveMapTasks--
+}
+
+func (s *Service) IncActiveReduceTasks() {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	s.ActiveReduceTasks++
+}
+
+func (s *Service) DecActiveReduceTasks() {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	s.ActiveReduceTasks--
+}
+
+func (s *Service) AddDeadWorkers(workerId string) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	s.DeadWorkers[workerId] = true
+}
+
+func (s *Service) RemoveDeadWorkers(workerId string) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	delete(s.DeadWorkers, workerId)
+}
+
+func (s *Service) checkIfDeadWorkersExceedsThreshold() bool {
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+	deadWorkers := s.DeadWorkers
+	if len(deadWorkers) >= s.DeadWorkersThreshold {
+		return true
+	}
+	return false
 }
 
 func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo) (*pbm.Ack, error) {
@@ -63,9 +146,7 @@ func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo
 		return nil, err
 	}
 
-	s.Mu.Lock()
-	s.Workers[worker.Uuid] = worker
-	s.Mu.Unlock()
+	s.AddWorker(workerInfo.GetUuid(), worker)
 	return &pbm.Ack{
 		Success: true,
 	}, nil
@@ -73,15 +154,13 @@ func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo
 
 func (s *Service) UpdateMapResult(ctx context.Context, mapResult *pbm.MapResult) (*pbm.Ack, error) {
 	mapTaskId := mapResult.GetUuid()
-	s.Mu.Lock()
-	defer s.Mu.Unlock()
-	mapTask, ok := s.MapTasks[mapTaskId]
-	if !ok {
-		return nil, ErrTaskIdDoesnotExist
+	mapTask, err := s.GetMapTask(mapTaskId)
+	if err != nil {
+		return nil, err
 	}
-	mapTask.TaskStatus = COMPLETE
-	mapTask.OutputFiles = mapResult.GetOutputFiles()
-	s.ActiveMapTasks--
+	mapTask.SetTaskStatus(COMPLETE)
+	mapTask.SetOutputFiles(mapResult.GetOutputFiles())
+	s.IncActiveMapTasks()
 	return &pbm.Ack{
 		Success: true,
 	}, nil
@@ -119,11 +198,9 @@ func (s *Service) processData() {
 	for {
 		// TODO : check active worker, map task states and reduce states
 		s.checkActiveWorkers()
-		s.Mu.RLock()
-		deadWorkers := s.DeadWorkers
-		s.Mu.RUnlock()
-		if len(deadWorkers) > s.DeadWorkersThreshold {
-			log.Println("Dead Workers:", deadWorkers)
+
+		if s.checkIfDeadWorkersExceedsThreshold() {
+			// log.Println("Dead Workers:", deadWorkers)
 			log.Fatal(ErrDeadWorkerThresholdReached)
 		}
 
@@ -137,32 +214,29 @@ func (s *Service) processData() {
 			}
 		}
 		s.Mu.Unlock()
+
 	}
 }
 
 func (s *Service) startMapPhase() {
-	filename := s.getFilename()
+	filename := s.GetFilename()
 
 	dataNodes, err := s.DFS.GetDataNodes(filename)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	workerCopy := make(map[string]*Worker)
-	s.Mu.RLock()
-	for k, v := range s.Workers {
-		workerCopy[k] = v
-	}
-	s.Mu.RUnlock()
+
 	// failureChan := make(chan string)
 	mapTasks := make(map[string]*MapTask)
 	for _, node := range dataNodes {
-		worker, ok := workerCopy[node.Uuid]
-		if !ok {
+		worker, err := s.GetWorker(node.Uuid)
+		if err != nil {
+			log.Println(err)
 			log.Println("node id not present in worker map:", node.Uuid)
 			continue
 		}
-		workerClient := worker.Client
+		workerClient := worker.GetClient()
 		for i := 0; i < len(node.Filenames); i++ {
 			mapTask := NewMapTask(node.Filenames[i], node.Uuid, s.NumReduce)
 			mapTasks[mapTask.ID] = mapTask
@@ -177,34 +251,20 @@ func (s *Service) startMapPhase() {
 
 func (s *Service) startMapTask(task *MapTask, client pbw.WorkerClient) {
 	mapRequest := &pbw.MapTask{
-		TaskId:    task.ID,
-		Filename:  task.TaskFile,
-		NumReduce: int32(task.NumReduce), // TODO : Look at this later
+		TaskId:    task.GetId(),
+		Filename:  task.GetTaskFile(),
+		NumReduce: int32(task.GetNumReduce()), // TODO : Look at this later
 	}
 	ack, err := client.AssignMap(context.Background(), mapRequest)
 	if err != nil || !ack.Success {
 		task.TaskStatus = FAILED
 		return
 	}
-	task.TaskStatus = INPROGRESS
-	s.Mu.Lock()
-	s.ActiveMapTasks++
-	s.Mu.Unlock()
-	return
+	task.SetTaskStatus(INPROGRESS)
+	s.IncActiveMapTasks()
 }
 
 func (s *Service) startReducePhase() {
-	mapTasksCopy := make(map[string]*MapTask)
-	workerCopy := make(map[string]*Worker)
-	s.Mu.RLock()
-	for k, v := range s.MapTasks {
-		mapTasksCopy[k] = v
-	}
-	for k, v := range s.Workers {
-		workerCopy[k] = v
-	}
-	s.Mu.RUnlock()
-
 	reducerToWorkerIdMap := s.getReducerIdToWorker()
 	reducerIdToFilePartitionsMap := s.getReducerIdToFilePations()
 	reduceTasks := make(map[string]*ReduceTask)
@@ -215,12 +275,13 @@ func (s *Service) startReducePhase() {
 			log.Println("reducerId not present in reducer to worker map:", reducerId)
 			continue
 		}
-		worker, ok := workerCopy[workerId]
-		if !ok {
+		worker, err := s.GetWorker(workerId)
+		if err != nil {
+			log.Println(err)
 			log.Println("node id not present in worker map:", workerId)
 			continue
 		}
-		workerClient := worker.Client
+		workerClient := worker.GetClient()
 		reduceTask := NewReduceTask(reducerFiles, workerId)
 		reduceTasks[reduceTask.ID] = reduceTask
 		go s.startReduceTask(reduceTask, workerClient)
@@ -233,7 +294,8 @@ func (s *Service) startReducePhase() {
 
 func (s *Service) startReduceTask(task *ReduceTask, client pbw.WorkerClient) {
 	dataNodes := make([]*pbw.NodeFileInfo, 0, 5)
-	for _, taskFile := range task.TaskFiles {
+	taskFiles := task.GetTaskFiles()
+	for _, taskFile := range taskFiles {
 		dataNodes = append(dataNodes, &pbw.NodeFileInfo{
 			File: taskFile.Filename,
 			Ip:   taskFile.NodeIP,
@@ -250,10 +312,8 @@ func (s *Service) startReduceTask(task *ReduceTask, client pbw.WorkerClient) {
 		task.TaskStatus = FAILED
 		return
 	}
-	task.TaskStatus = INPROGRESS
-	s.Mu.Lock()
-	s.ActiveReduceTasks++
-	s.Mu.Unlock()
+	task.SetTaskStatus(INPROGRESS)
+	s.IncActiveReduceTasks()
 	return
 
 }
@@ -271,14 +331,13 @@ func (s *Service) getReducerIdToWorker() map[uint32]string {
 
 func (s *Service) getReducerIdToFilePations() map[uint32][]*ReduceDataNodeInfo {
 	reducerIdToFilePartitionsMap := make(map[uint32][]*ReduceDataNodeInfo)
-	workerCopy := make(map[string]*Worker)
+	mapTasksCopy := make(map[string]*MapTask)
 	s.Mu.RLock()
-	for k, v := range s.Workers {
-		workerCopy[k] = v
+	for k, v := range s.MapTasks {
+		mapTasksCopy[k] = v
 	}
 	s.Mu.RUnlock()
-
-	for _, task := range s.MapTasks {
+	for _, task := range mapTasksCopy {
 		for _, filepartion := range task.OutputFiles {
 			reducerId, err := s.calculateReducerIdFromFilePartition(filepartion)
 			if err != nil {
@@ -290,8 +349,10 @@ func (s *Service) getReducerIdToFilePations() map[uint32][]*ReduceDataNodeInfo {
 				reducerIdToFilePartitionsMap[reducerId] = make([]*ReduceDataNodeInfo, 0, 5)
 			}
 			files := reducerIdToFilePartitionsMap[reducerId]
-			worker, ok := workerCopy[task.WorkerID]
-			if !ok {
+			workerId := task.GetWorkerId()
+			worker, err := s.GetWorker(workerId)
+			if err != nil {
+				log.Println(err)
 				log.Println("node id not present in worker map:", task.WorkerID)
 				continue
 			}
@@ -341,7 +402,7 @@ func (s *Service) checkActiveWorkers() {
 }
 
 func (s *Service) checkActiveWorker(worker *Worker) bool {
-	client := worker.Client
+	client := worker.GetClient()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := client.HealthCheck(ctx, &pbw.HealthcheckRequest{})
@@ -353,20 +414,17 @@ func (s *Service) checkActiveWorker(worker *Worker) bool {
 }
 
 func (s *Service) updateWorkerState(workerId string, alive bool) {
-	s.Mu.Lock()
-	defer s.Mu.Unlock()
-
-	worker, ok := s.Workers[workerId]
-	if !ok {
+	worker, err := s.GetWorker(workerId)
+	if err != nil {
+		log.Println(err)
 		return
 	}
 	if alive {
-		worker.State = WORKER_ALIVE
+		worker.SetState(WORKER_ALIVE)
 		return
 	}
-	worker.State = WORKER_DEAD
-	s.DeadWorkers = append(s.DeadWorkers, workerId)
-	return
+	worker.SetState(WORKER_DEAD)
+	s.AddDeadWorkers(workerId)
 }
 
 func hash(s string) uint32 {
