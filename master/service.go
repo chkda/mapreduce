@@ -194,6 +194,21 @@ func (s *Service) UpdateMapResult(ctx context.Context, mapResult *pbm.MapResult)
 	}, nil
 }
 
+func (s *Service) UpdateReduceResult(ctx context.Context, reduceResult *pbm.ReduceResult) (*pbm.Ack, error) {
+	reduceTaskId := reduceResult.GetUuid()
+	reduceTask, err := s.GetReduceTask(reduceTaskId)
+	if err != nil {
+		return nil, err
+	}
+	reduceTask.SetTaskStatus(COMPLETE)
+	reduceTask.SetOutputFile(reduceResult.GetFilename())
+	s.IncActiveMapTasks()
+	s.notifyReduceChannels(reduceTaskId)
+	return &pbm.Ack{
+		Success: true,
+	}, nil
+}
+
 func (s *Service) UpdateDataNodes(ctx context.Context, nodesInfo *pbm.DataNodesInfo) (*pbm.Ack, error) {
 	nodes := nodesInfo.GetNodes()
 	fileName := nodesInfo.GetFilename()
