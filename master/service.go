@@ -5,6 +5,9 @@ import (
 	"errors"
 	"hash/fnv"
 	"log"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,7 +25,9 @@ const (
 )
 
 var (
+	ErrReducerIdNotInt            = errors.New("reducer id not an integer")
 	ErrTaskIdDoesnotExist         = errors.New("taskId doesn't exist")
+	ErrWrongFilenameFormat        = errors.New("wrong filename format")
 	ErrDeadWorkerThresholdReached = errors.New("dead workers have exceeded more than threshold")
 )
 
@@ -35,6 +40,7 @@ type Service struct {
 	DeadWorkers          []string
 	NumReduce            int
 	ActiveMapTasks       int
+	ActiveReduceTasks    int
 }
 
 type Worker struct {
@@ -152,22 +158,28 @@ func (s *Service) startMapPhase(filename string) {
 		return
 	}
 	// failureChan := make(chan string)
-
+	s.Mu.RLock()
 	for _, node := range dataNodes {
-		workerClient := s.Workers[node.Uuid].Client
+		worker, ok := s.Workers[node.Uuid]
+		if !ok {
+			log.Println("node id not present in worker map:", node.Uuid)
+			continue
+		}
+		workerClient := worker.Client
 		for i := 0; i < len(node.Filenames); i++ {
-			mapTask := NewMapTask(node.Filenames[i], node.Uuid)
+			mapTask := NewMapTask(node.Filenames[i], node.Uuid, s.NumReduce)
 			s.MapTasks[mapTask.ID] = mapTask
 			go s.startMapTask(mapTask, workerClient)
 		}
 	}
+	s.Mu.RUnlock()
 }
 
 func (s *Service) startMapTask(task *MapTask, client pbw.WorkerClient) {
 	mapRequest := &pbw.MapTask{
 		TaskId:    task.ID,
 		Filename:  task.TaskFile,
-		NumReduce: 0, // TODO : Look at this later
+		NumReduce: int32(task.NumReduce), // TODO : Look at this later
 	}
 	ack, err := client.AssignMap(context.Background(), mapRequest)
 	if err != nil || !ack.Success {
@@ -189,18 +201,109 @@ func (s *Service) startReducePhase() {
 	}
 	s.Mu.RUnlock()
 
-	// workerIDHashMap := s.calculateWorkerIndex()
+	reducerToWorkerIdMap := s.getReducerIdToWorker()
+	reducerIdToFilePartitionsMap := s.getReducerIdToFilePations()
+
+	s.Mu.RLock()
+	for reducerId, reducerFiles := range reducerIdToFilePartitionsMap {
+		workerId, ok := reducerToWorkerIdMap[reducerId]
+		if !ok {
+			log.Println("reducerId not present in reducer to worker map:", reducerId)
+			continue
+		}
+		worker, ok := s.Workers[workerId]
+		if !ok {
+			log.Println("node id not present in worker map:", workerId)
+			continue
+		}
+		workerClient := worker.Client
+		reduceTask := NewReduceTask(reducerFiles, workerId)
+		go s.startReduceTask(reduceTask, workerClient)
+	}
+	s.Mu.RUnlock()
 }
 
-func (s *Service) calculateWorkerIndex() map[uint32]string {
-	workerIDHashMap := make(map[uint32]string)
+func (s *Service) startReduceTask(task *ReduceTask, client pbw.WorkerClient) {
+	dataNodes := make([]*pbw.NodeFileInfo, 0, 5)
+	for _, taskFile := range task.TaskFiles {
+		dataNodes = append(dataNodes, &pbw.NodeFileInfo{
+			File: taskFile.Filename,
+			Ip:   taskFile.NodeIP,
+		})
+	}
+	reduceRequest := &pbw.ReduceTask{
+		TaskId: task.ID,
+		Datanodes: &pbw.DataNodesInfo{
+			Nodes: dataNodes,
+		},
+	}
+	ack, err := client.AssignReduce(context.Background(), reduceRequest)
+	if err != nil || !ack.Success {
+		task.TaskStatus = FAILED
+		return
+	}
+	task.TaskStatus = INPROGRESS
+	s.Mu.Lock()
+	s.ActiveReduceTasks++
+	s.Mu.Unlock()
+	return
+
+}
+
+func (s *Service) getReducerIdToWorker() map[uint32]string {
+	reducerToWorkerIdMap := make(map[uint32]string)
 	s.Mu.RLock()
 	for workerId, _ := range s.Workers {
 		hashId := hash(workerId) % uint32(s.NumReduce)
-		workerIDHashMap[hashId] = workerId
+		reducerToWorkerIdMap[hashId] = workerId
 	}
 	s.Mu.RUnlock()
-	return workerIDHashMap
+	return reducerToWorkerIdMap
+}
+
+func (s *Service) getReducerIdToFilePations() map[uint32][]*ReduceDataNodeInfo {
+	reducerIdToFilePartitionsMap := make(map[uint32][]*ReduceDataNodeInfo)
+	s.Mu.RLock()
+	for _, task := range s.MapTasks {
+		for _, filepartion := range task.OutputFiles {
+			reducerId, err := s.calculateReducerIdFromFilePartition(filepartion)
+			if err != nil {
+				log.Printf("filename: %s : %s", filepartion, err.Error())
+				continue
+			}
+			_, ok := reducerIdToFilePartitionsMap[reducerId]
+			if !ok {
+				reducerIdToFilePartitionsMap[reducerId] = make([]*ReduceDataNodeInfo, 0, 5)
+			}
+			files := reducerIdToFilePartitionsMap[reducerId]
+			worker, ok := s.Workers[task.WorkerID]
+			if !ok {
+				log.Println("node id not present in worker map:", task.WorkerID)
+				continue
+			}
+			files = append(files, &ReduceDataNodeInfo{
+				Filename: filepartion,
+				NodeIP:   worker.IP,
+			})
+			reducerIdToFilePartitionsMap[reducerId] = files
+		}
+	}
+	s.Mu.RUnlock()
+	return reducerIdToFilePartitionsMap
+}
+
+func (s *Service) calculateReducerIdFromFilePartition(filename string) (uint32, error) {
+	filename = strings.Trim(filename, filepath.Ext(filename))
+	parts := strings.Split(filename, "-")
+	if len(parts) != 3 || parts[0] != "mr" {
+		return 0, ErrWrongFilenameFormat
+	}
+
+	reducerId, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return 0, ErrReducerIdNotInt
+	}
+	return uint32(reducerId), nil
 }
 
 func (s *Service) checkActiveWorkers() {

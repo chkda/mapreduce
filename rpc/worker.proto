@@ -47,9 +47,8 @@ message DataNodesInfo{
 }
 
 message NodeFileInfo{
-    string uuid = 1;
-    string ip = 2;
-    string file = 3;
+    string ip = 1;
+    string file = 2;
 }
 
 message Ack {
