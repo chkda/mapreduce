@@ -13,15 +13,6 @@ import (
 
 	pbm "github.com/chkda/mapreduce/rpc/master"
 	pbw "github.com/chkda/mapreduce/rpc/worker"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-)
-
-type WorkerStatus int
-
-const (
-	WORKER_ALIVE WorkerStatus = iota
-	WORKER_DEAD
 )
 
 var (
@@ -45,13 +36,6 @@ type Service struct {
 	ActiveReduceTasks    int
 }
 
-type Worker struct {
-	Uuid   string
-	IP     string
-	State  WorkerStatus
-	Client pbw.WorkerClient
-}
-
 func New(filename string, numReduce int, deadWorkerThreshold int) *Service {
 	dfs := NewDFS()
 	return &Service{
@@ -70,17 +54,15 @@ func (s *Service) getFilename() string {
 }
 
 func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo) (*pbm.Ack, error) {
-	worker := &Worker{
-		Uuid:  workerInfo.GetUuid(),
-		IP:    workerInfo.GetIp(),
-		State: WORKER_ALIVE,
-	}
-	conn, err := grpc.Dial(worker.IP, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	worker, err := NewWorker(
+		workerInfo.GetUuid(),
+		workerInfo.GetIp(),
+	)
+
 	if err != nil {
 		return nil, err
 	}
-	client := pbw.NewWorkerClient(conn)
-	worker.Client = client
+
 	s.Mu.Lock()
 	s.Workers[worker.Uuid] = worker
 	s.Mu.Unlock()
