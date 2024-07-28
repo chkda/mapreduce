@@ -30,9 +30,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type WorkerClient interface {
-	AssignMap(ctx context.Context, in *MapTask, opts ...grpc.CallOption) (*Ack, error)
-	AssignReduce(ctx context.Context, in *ReduceTask, opts ...grpc.CallOption) (*Ack, error)
-	HealthCheck(ctx context.Context, in *HealthcheckRequest, opts ...grpc.CallOption) (*Ack, error)
+	AssignMap(ctx context.Context, in *MapTask, opts ...grpc.CallOption) (*WorkerAck, error)
+	AssignReduce(ctx context.Context, in *ReduceTask, opts ...grpc.CallOption) (*WorkerAck, error)
+	HealthCheck(ctx context.Context, in *HealthcheckRequest, opts ...grpc.CallOption) (*WorkerAck, error)
 	GetStatus(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	GetIntermediateData(ctx context.Context, in *InterMediateDataRequest, opts ...grpc.CallOption) (*InterMediateDataResponse, error)
 }
@@ -45,9 +45,9 @@ func NewWorkerClient(cc grpc.ClientConnInterface) WorkerClient {
 	return &workerClient{cc}
 }
 
-func (c *workerClient) AssignMap(ctx context.Context, in *MapTask, opts ...grpc.CallOption) (*Ack, error) {
+func (c *workerClient) AssignMap(ctx context.Context, in *MapTask, opts ...grpc.CallOption) (*WorkerAck, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Ack)
+	out := new(WorkerAck)
 	err := c.cc.Invoke(ctx, Worker_AssignMap_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -55,9 +55,9 @@ func (c *workerClient) AssignMap(ctx context.Context, in *MapTask, opts ...grpc.
 	return out, nil
 }
 
-func (c *workerClient) AssignReduce(ctx context.Context, in *ReduceTask, opts ...grpc.CallOption) (*Ack, error) {
+func (c *workerClient) AssignReduce(ctx context.Context, in *ReduceTask, opts ...grpc.CallOption) (*WorkerAck, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Ack)
+	out := new(WorkerAck)
 	err := c.cc.Invoke(ctx, Worker_AssignReduce_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -65,9 +65,9 @@ func (c *workerClient) AssignReduce(ctx context.Context, in *ReduceTask, opts ..
 	return out, nil
 }
 
-func (c *workerClient) HealthCheck(ctx context.Context, in *HealthcheckRequest, opts ...grpc.CallOption) (*Ack, error) {
+func (c *workerClient) HealthCheck(ctx context.Context, in *HealthcheckRequest, opts ...grpc.CallOption) (*WorkerAck, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Ack)
+	out := new(WorkerAck)
 	err := c.cc.Invoke(ctx, Worker_HealthCheck_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -99,9 +99,9 @@ func (c *workerClient) GetIntermediateData(ctx context.Context, in *InterMediate
 // All implementations must embed UnimplementedWorkerServer
 // for forward compatibility
 type WorkerServer interface {
-	AssignMap(context.Context, *MapTask) (*Ack, error)
-	AssignReduce(context.Context, *ReduceTask) (*Ack, error)
-	HealthCheck(context.Context, *HealthcheckRequest) (*Ack, error)
+	AssignMap(context.Context, *MapTask) (*WorkerAck, error)
+	AssignReduce(context.Context, *ReduceTask) (*WorkerAck, error)
+	HealthCheck(context.Context, *HealthcheckRequest) (*WorkerAck, error)
 	GetStatus(context.Context, *StatusRequest) (*StatusResponse, error)
 	GetIntermediateData(context.Context, *InterMediateDataRequest) (*InterMediateDataResponse, error)
 	mustEmbedUnimplementedWorkerServer()
@@ -111,13 +111,13 @@ type WorkerServer interface {
 type UnimplementedWorkerServer struct {
 }
 
-func (UnimplementedWorkerServer) AssignMap(context.Context, *MapTask) (*Ack, error) {
+func (UnimplementedWorkerServer) AssignMap(context.Context, *MapTask) (*WorkerAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AssignMap not implemented")
 }
-func (UnimplementedWorkerServer) AssignReduce(context.Context, *ReduceTask) (*Ack, error) {
+func (UnimplementedWorkerServer) AssignReduce(context.Context, *ReduceTask) (*WorkerAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AssignReduce not implemented")
 }
-func (UnimplementedWorkerServer) HealthCheck(context.Context, *HealthcheckRequest) (*Ack, error) {
+func (UnimplementedWorkerServer) HealthCheck(context.Context, *HealthcheckRequest) (*WorkerAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HealthCheck not implemented")
 }
 func (UnimplementedWorkerServer) GetStatus(context.Context, *StatusRequest) (*StatusResponse, error) {

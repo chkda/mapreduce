@@ -3,9 +3,9 @@ syntax = "proto3";
 option go_package = "github.com/chkda/mapreduce/rpc/worker";
 
 service Worker{
-    rpc AssignMap(MapTask) returns (Ack);
-    rpc AssignReduce(ReduceTask) returns (Ack);
-    rpc HealthCheck(HealthcheckRequest) returns (Ack);
+    rpc AssignMap(MapTask) returns (WorkerAck);
+    rpc AssignReduce(ReduceTask) returns (WorkerAck);
+    rpc HealthCheck(HealthcheckRequest) returns (WorkerAck);
     rpc GetStatus(StatusRequest) returns (StatusResponse);
     rpc GetIntermediateData(InterMediateDataRequest) returns (InterMediateDataResponse);
 }
@@ -51,7 +51,7 @@ message NodeFileInfo{
     string file = 2;
 }
 
-message Ack {
+message WorkerAck {
     bool success = 1;
 }
 

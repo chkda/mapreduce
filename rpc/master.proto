@@ -3,11 +3,11 @@ syntax = "proto3";
 option go_package = "github.com/chkda/mapreduce/rpc/master";
 
 service Master{
-    rpc Trigger(TaskRequest) returns (Ack);
-    rpc RegisterWorker(WorkerInfo) returns (Ack);
-    rpc UpdateMapResult(MapResult) returns (Ack);
-    rpc UpdateDataNodes(DataNodesInfo) returns (Ack);
-    rpc UpdateReduceResult(ReduceResult) returns (Ack);
+    rpc Trigger(TaskRequest) returns (MasterAck);
+    rpc RegisterWorker(WorkerInfo) returns (MasterAck);
+    rpc UpdateMapResult(MapResult) returns (MasterAck);
+    rpc UpdateDataNodes(DFSDataNodesInfo) returns (MasterAck);
+    rpc UpdateReduceResult(ReduceResult) returns (MasterAck);
 }
 
 message TaskRequest {
@@ -30,16 +30,16 @@ message ReduceResult {
     string filename = 2;
 }
 
-message Ack{
+message MasterAck{
     bool success=1;
 }
 
-message DataNodesInfo{
+message DFSDataNodesInfo{
     string filename = 1;
-    repeated NodeFileInfo nodes = 2;
+    repeated DFSNodeFileInfo nodes = 2;
 }
 
-message NodeFileInfo{
+message DFSNodeFileInfo{
     string uuid = 1;
     string ip = 2;
     repeated string files = 3;

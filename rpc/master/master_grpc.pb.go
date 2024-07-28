@@ -30,11 +30,11 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MasterClient interface {
-	Trigger(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*Ack, error)
-	RegisterWorker(ctx context.Context, in *WorkerInfo, opts ...grpc.CallOption) (*Ack, error)
-	UpdateMapResult(ctx context.Context, in *MapResult, opts ...grpc.CallOption) (*Ack, error)
-	UpdateDataNodes(ctx context.Context, in *DataNodesInfo, opts ...grpc.CallOption) (*Ack, error)
-	UpdateReduceResult(ctx context.Context, in *ReduceResult, opts ...grpc.CallOption) (*Ack, error)
+	Trigger(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*MasterAck, error)
+	RegisterWorker(ctx context.Context, in *WorkerInfo, opts ...grpc.CallOption) (*MasterAck, error)
+	UpdateMapResult(ctx context.Context, in *MapResult, opts ...grpc.CallOption) (*MasterAck, error)
+	UpdateDataNodes(ctx context.Context, in *DFSDataNodesInfo, opts ...grpc.CallOption) (*MasterAck, error)
+	UpdateReduceResult(ctx context.Context, in *ReduceResult, opts ...grpc.CallOption) (*MasterAck, error)
 }
 
 type masterClient struct {
@@ -45,9 +45,9 @@ func NewMasterClient(cc grpc.ClientConnInterface) MasterClient {
 	return &masterClient{cc}
 }
 
-func (c *masterClient) Trigger(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*Ack, error) {
+func (c *masterClient) Trigger(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*MasterAck, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Ack)
+	out := new(MasterAck)
 	err := c.cc.Invoke(ctx, Master_Trigger_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -55,9 +55,9 @@ func (c *masterClient) Trigger(ctx context.Context, in *TaskRequest, opts ...grp
 	return out, nil
 }
 
-func (c *masterClient) RegisterWorker(ctx context.Context, in *WorkerInfo, opts ...grpc.CallOption) (*Ack, error) {
+func (c *masterClient) RegisterWorker(ctx context.Context, in *WorkerInfo, opts ...grpc.CallOption) (*MasterAck, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Ack)
+	out := new(MasterAck)
 	err := c.cc.Invoke(ctx, Master_RegisterWorker_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -65,9 +65,9 @@ func (c *masterClient) RegisterWorker(ctx context.Context, in *WorkerInfo, opts 
 	return out, nil
 }
 
-func (c *masterClient) UpdateMapResult(ctx context.Context, in *MapResult, opts ...grpc.CallOption) (*Ack, error) {
+func (c *masterClient) UpdateMapResult(ctx context.Context, in *MapResult, opts ...grpc.CallOption) (*MasterAck, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Ack)
+	out := new(MasterAck)
 	err := c.cc.Invoke(ctx, Master_UpdateMapResult_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -75,9 +75,9 @@ func (c *masterClient) UpdateMapResult(ctx context.Context, in *MapResult, opts 
 	return out, nil
 }
 
-func (c *masterClient) UpdateDataNodes(ctx context.Context, in *DataNodesInfo, opts ...grpc.CallOption) (*Ack, error) {
+func (c *masterClient) UpdateDataNodes(ctx context.Context, in *DFSDataNodesInfo, opts ...grpc.CallOption) (*MasterAck, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Ack)
+	out := new(MasterAck)
 	err := c.cc.Invoke(ctx, Master_UpdateDataNodes_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -85,9 +85,9 @@ func (c *masterClient) UpdateDataNodes(ctx context.Context, in *DataNodesInfo, o
 	return out, nil
 }
 
-func (c *masterClient) UpdateReduceResult(ctx context.Context, in *ReduceResult, opts ...grpc.CallOption) (*Ack, error) {
+func (c *masterClient) UpdateReduceResult(ctx context.Context, in *ReduceResult, opts ...grpc.CallOption) (*MasterAck, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Ack)
+	out := new(MasterAck)
 	err := c.cc.Invoke(ctx, Master_UpdateReduceResult_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -99,11 +99,11 @@ func (c *masterClient) UpdateReduceResult(ctx context.Context, in *ReduceResult,
 // All implementations must embed UnimplementedMasterServer
 // for forward compatibility
 type MasterServer interface {
-	Trigger(context.Context, *TaskRequest) (*Ack, error)
-	RegisterWorker(context.Context, *WorkerInfo) (*Ack, error)
-	UpdateMapResult(context.Context, *MapResult) (*Ack, error)
-	UpdateDataNodes(context.Context, *DataNodesInfo) (*Ack, error)
-	UpdateReduceResult(context.Context, *ReduceResult) (*Ack, error)
+	Trigger(context.Context, *TaskRequest) (*MasterAck, error)
+	RegisterWorker(context.Context, *WorkerInfo) (*MasterAck, error)
+	UpdateMapResult(context.Context, *MapResult) (*MasterAck, error)
+	UpdateDataNodes(context.Context, *DFSDataNodesInfo) (*MasterAck, error)
+	UpdateReduceResult(context.Context, *ReduceResult) (*MasterAck, error)
 	mustEmbedUnimplementedMasterServer()
 }
 
@@ -111,19 +111,19 @@ type MasterServer interface {
 type UnimplementedMasterServer struct {
 }
 
-func (UnimplementedMasterServer) Trigger(context.Context, *TaskRequest) (*Ack, error) {
+func (UnimplementedMasterServer) Trigger(context.Context, *TaskRequest) (*MasterAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Trigger not implemented")
 }
-func (UnimplementedMasterServer) RegisterWorker(context.Context, *WorkerInfo) (*Ack, error) {
+func (UnimplementedMasterServer) RegisterWorker(context.Context, *WorkerInfo) (*MasterAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterWorker not implemented")
 }
-func (UnimplementedMasterServer) UpdateMapResult(context.Context, *MapResult) (*Ack, error) {
+func (UnimplementedMasterServer) UpdateMapResult(context.Context, *MapResult) (*MasterAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateMapResult not implemented")
 }
-func (UnimplementedMasterServer) UpdateDataNodes(context.Context, *DataNodesInfo) (*Ack, error) {
+func (UnimplementedMasterServer) UpdateDataNodes(context.Context, *DFSDataNodesInfo) (*MasterAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateDataNodes not implemented")
 }
-func (UnimplementedMasterServer) UpdateReduceResult(context.Context, *ReduceResult) (*Ack, error) {
+func (UnimplementedMasterServer) UpdateReduceResult(context.Context, *ReduceResult) (*MasterAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateReduceResult not implemented")
 }
 func (UnimplementedMasterServer) mustEmbedUnimplementedMasterServer() {}
@@ -194,7 +194,7 @@ func _Master_UpdateMapResult_Handler(srv interface{}, ctx context.Context, dec f
 }
 
 func _Master_UpdateDataNodes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DataNodesInfo)
+	in := new(DFSDataNodesInfo)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -206,7 +206,7 @@ func _Master_UpdateDataNodes_Handler(srv interface{}, ctx context.Context, dec f
 		FullMethod: Master_UpdateDataNodes_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MasterServer).UpdateDataNodes(ctx, req.(*DataNodesInfo))
+		return srv.(MasterServer).UpdateDataNodes(ctx, req.(*DFSDataNodesInfo))
 	}
 	return interceptor(ctx, in, info, handler)
 }

@@ -25,6 +25,7 @@ var (
 )
 
 type Service struct {
+	pbm.MasterServer
 	Filename             string
 	Workers              map[string]*Worker
 	DFS                  *DFS
@@ -42,18 +43,19 @@ type Service struct {
 	ReduceEndChan        chan bool
 }
 
-func New(filename string, numReduce int, deadWorkerThreshold int) *Service {
+func New(cfg *Config) *Service {
 	dfs := NewDFS()
 	return &Service{
 		Workers:              make(map[string]*Worker),
 		DFS:                  dfs,
-		Filename:             filename,
-		NumReduce:            numReduce,
-		DeadWorkersThreshold: deadWorkerThreshold,
+		Filename:             cfg.Filename,
+		NumReduce:            cfg.NumReduce,
+		DeadWorkersThreshold: cfg.DeadWorkersThreshold,
 		MapTaskDoneChan:      make(chan string),
 		MapEndChan:           make(chan bool),
 		ReduceTaskDoneChan:   make(chan string),
 		ReduceEndChan:        make(chan bool),
+		DeadWorkers:          make(map[string]bool),
 	}
 }
 
@@ -163,7 +165,7 @@ func (s *Service) notifyReduceChannels(taskId string) {
 	}
 }
 
-func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo) (*pbm.Ack, error) {
+func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo) (*pbm.MasterAck, error) {
 	worker, err := NewWorker(
 		workerInfo.GetUuid(),
 		workerInfo.GetIp(),
@@ -174,12 +176,12 @@ func (s *Service) RegisterWorker(ctx context.Context, workerInfo *pbm.WorkerInfo
 	}
 
 	s.AddWorker(workerInfo.GetUuid(), worker)
-	return &pbm.Ack{
+	return &pbm.MasterAck{
 		Success: true,
 	}, nil
 }
 
-func (s *Service) UpdateMapResult(ctx context.Context, mapResult *pbm.MapResult) (*pbm.Ack, error) {
+func (s *Service) UpdateMapResult(ctx context.Context, mapResult *pbm.MapResult) (*pbm.MasterAck, error) {
 	mapTaskId := mapResult.GetUuid()
 	mapTask, err := s.GetMapTask(mapTaskId)
 	if err != nil {
@@ -189,12 +191,12 @@ func (s *Service) UpdateMapResult(ctx context.Context, mapResult *pbm.MapResult)
 	mapTask.SetOutputFiles(mapResult.GetOutputFiles())
 	s.IncActiveMapTasks()
 	s.notifyMapChannels(mapTaskId)
-	return &pbm.Ack{
+	return &pbm.MasterAck{
 		Success: true,
 	}, nil
 }
 
-func (s *Service) UpdateReduceResult(ctx context.Context, reduceResult *pbm.ReduceResult) (*pbm.Ack, error) {
+func (s *Service) UpdateReduceResult(ctx context.Context, reduceResult *pbm.ReduceResult) (*pbm.MasterAck, error) {
 	reduceTaskId := reduceResult.GetUuid()
 	reduceTask, err := s.GetReduceTask(reduceTaskId)
 	if err != nil {
@@ -204,12 +206,12 @@ func (s *Service) UpdateReduceResult(ctx context.Context, reduceResult *pbm.Redu
 	reduceTask.SetOutputFile(reduceResult.GetFilename())
 	s.IncActiveMapTasks()
 	s.notifyReduceChannels(reduceTaskId)
-	return &pbm.Ack{
+	return &pbm.MasterAck{
 		Success: true,
 	}, nil
 }
 
-func (s *Service) UpdateDataNodes(ctx context.Context, nodesInfo *pbm.DataNodesInfo) (*pbm.Ack, error) {
+func (s *Service) UpdateDataNodes(ctx context.Context, nodesInfo *pbm.DFSDataNodesInfo) (*pbm.MasterAck, error) {
 	nodes := nodesInfo.GetNodes()
 	fileName := nodesInfo.GetFilename()
 	datanodes := make([]*DataNode, 0, 4)
@@ -223,14 +225,14 @@ func (s *Service) UpdateDataNodes(ctx context.Context, nodesInfo *pbm.DataNodesI
 	s.Mu.Lock()
 	s.DFS.FileChunks[fileName] = datanodes
 	s.Mu.Unlock()
-	return &pbm.Ack{
+	return &pbm.MasterAck{
 		Success: true,
 	}, nil
 }
 
-func (s *Service) Trigger(ctx context.Context, taskRequest *pbm.TaskRequest) (*pbm.Ack, error) {
+func (s *Service) Trigger(ctx context.Context, taskRequest *pbm.TaskRequest) (*pbm.MasterAck, error) {
 	go s.processData()
-	return &pbm.Ack{
+	return &pbm.MasterAck{
 		Success: true,
 	}, nil
 }
