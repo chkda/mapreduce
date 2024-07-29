@@ -249,6 +249,20 @@ func (s *Service) updateMapResult(result *pbm.MapResult) {
 	}
 }
 
+func (s *Service) updateReduceResult(result *pbm.ReduceResult) {
+	maxRetry := 3
+	client := s.GetMasterClient()
+	ctx := context.Background()
+	for i := 0; i < maxRetry; i++ {
+		ack, err := client.UpdateReduceResult(ctx, result)
+		if err != nil || !ack.Success {
+			log.Println(err)
+			continue
+		}
+		break
+	}
+}
+
 func (s *Service) Map(key string, value string, emitIntermediatePair func(string, string)) {
 	scanner := bufio.NewScanner(strings.NewReader(value))
 	scanner.Split(bufio.ScanWords)
