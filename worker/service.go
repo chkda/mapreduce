@@ -40,6 +40,12 @@ func (s *Service) GetMapTask(taskId string) (*MapTask, error) {
 	return task, nil
 }
 
+func (s *Service) AddMapTask(taskId string, task *MapTask) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	s.MapTasks[taskId] = task
+}
+
 func (s *Service) GetReduceTask(taskId string) (*ReduceTask, error) {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
@@ -48,6 +54,12 @@ func (s *Service) GetReduceTask(taskId string) (*ReduceTask, error) {
 		return nil, ErrTaskIdDoesnotExist
 	}
 	return task, nil
+}
+
+func (s *Service) AddReduceTask(taskId string, task *ReduceTask) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	s.ReduceTasks[taskId] = task
 }
 
 func (s *Service) HealthCheck(ctx *context.Context, req *pbw.HealthcheckRequest) (*pbw.WorkerAck, error) {
@@ -75,4 +87,42 @@ func (s *Service) GetTaskStatus(ctx *context.Context, req *pbw.StatusRequest) (*
 		TaskId: task.GetId(),
 		Status: pbw.Status(task.GetTaskStatus()),
 	}, nil
+}
+
+func (s *Service) AssignMap(ctx context.Context, mapRequest *pbw.MapTask) (*pbw.WorkerAck, error) {
+	task := NewMapTask(
+		mapRequest.GetFilename(),
+		mapRequest.GetTaskId(),
+		int(mapRequest.GetNumReduce()),
+	)
+	s.AddMapTask(mapRequest.GetTaskId(), task)
+	go s.executeMapTask(mapRequest.GetTaskId())
+	return &pbw.WorkerAck{
+		Success: true,
+	}, nil
+}
+
+func (s *Service) AssignReduce(ctx context.Context, reduceRequest *pbw.ReduceTask) (*pbw.WorkerAck, error) {
+	intermediateData := make([]*ReduceDataNodeInfo, 0, 5)
+	datanodes := reduceRequest.GetDatanodes()
+	for _, data := range datanodes.GetNodes() {
+		intermediateData = append(intermediateData, &ReduceDataNodeInfo{
+			Filename: data.GetFile(),
+			NodeIP:   data.GetIp(),
+		})
+	}
+	task := NewReduceTask(intermediateData, reduceRequest.GetTaskId())
+	s.AddReduceTask(reduceRequest.GetTaskId(), task)
+	go s.executeMapTask(reduceRequest.GetTaskId())
+	return &pbw.WorkerAck{
+		Success: true,
+	}, nil
+}
+
+func (s *Service) executeMapTask(taskId string) {
+	// TODO
+}
+
+func (s *Service) executeReduceTask(taskId string) {
+	// TODO
 }
