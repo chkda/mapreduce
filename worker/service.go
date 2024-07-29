@@ -113,7 +113,7 @@ func (s *Service) AssignReduce(ctx context.Context, reduceRequest *pbw.ReduceTas
 	}
 	task := NewReduceTask(intermediateData, reduceRequest.GetTaskId())
 	s.AddReduceTask(reduceRequest.GetTaskId(), task)
-	go s.executeMapTask(reduceRequest.GetTaskId())
+	go s.executeReduceTask(reduceRequest.GetTaskId())
 	return &pbw.WorkerAck{
 		Success: true,
 	}, nil
