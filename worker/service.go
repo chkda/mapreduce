@@ -3,12 +3,16 @@ package worker
 import (
 	"context"
 	"errors"
+	"io/ioutil"
+	"os"
 	"sync"
 
 	pbw "github.com/chkda/mapreduce/rpc/worker"
 )
 
 var (
+	ErrUnableToOpenFile   = errors.New("unable to open file")
+	ErrUnableToReadFile   = errors.New("unable to read file")
 	ErrTaskIdDoesnotExist = errors.New("taskId doesn't exist")
 )
 
@@ -119,10 +123,35 @@ func (s *Service) AssignReduce(ctx context.Context, reduceRequest *pbw.ReduceTas
 	}, nil
 }
 
+func (s *Service) GetIntermediateData(ctx context.Context, req *pbw.InterMediateDataRequest) (*pbw.InterMediateDataResponse, error) {
+	filename := req.GetFilename()
+	content, err := s.readDataFromFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	return &pbw.InterMediateDataResponse{
+		Data: content,
+	}, nil
+}
+
 func (s *Service) executeMapTask(taskId string) {
 	// TODO
 }
 
 func (s *Service) executeReduceTask(taskId string) {
 	// TODO
+}
+
+func (s *Service) readDataFromFile(filename string) ([]byte, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, ErrUnableToOpenFile
+	}
+	defer file.Close()
+
+	content, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, ErrUnableToReadFile
+	}
+	return content, nil
 }
