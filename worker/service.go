@@ -3,35 +3,61 @@ package worker
 import (
 	"context"
 	"errors"
+	"hash/fnv"
 	"io/ioutil"
 	"os"
 	"sync"
 
+	pbm "github.com/chkda/mapreduce/rpc/master"
 	pbw "github.com/chkda/mapreduce/rpc/worker"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 var (
-	ErrUnableToOpenFile   = errors.New("unable to open file")
-	ErrUnableToReadFile   = errors.New("unable to read file")
-	ErrTaskIdDoesnotExist = errors.New("taskId doesn't exist")
+	ErrUnableToOpenFile           = errors.New("unable to open file")
+	ErrUnableToReadFile           = errors.New("unable to read file")
+	ErrTaskIdDoesnotExist         = errors.New("taskId doesn't exist")
+	ErrUnableToRegisterWithMaster = errors.New("unable to register with master")
 )
 
 type Service struct {
 	pbw.WorkerServer
-	Mu          sync.RWMutex
-	ID          string
-	IP          string
-	MasterIP    string
-	MapTasks    map[string]*MapTask
-	ReduceTasks map[string]*ReduceTask
+	Mu           sync.RWMutex
+	ID           string
+	IP           string
+	MasterIP     string
+	MasterClient pbm.MasterClient
+	MasterConn   *grpc.ClientConn
+	MapTasks     map[string]*MapTask
+	ReduceTasks  map[string]*ReduceTask
 }
 
-func New(cfg *Config) *Service {
-	return &Service{
-		ID:       cfg.ID,
-		IP:       cfg.IP,
-		MasterIP: cfg.MasterIP,
+func New(cfg *Config) (*Service, error) {
+
+	worker := &Service{
+		ID: cfg.ID,
+		IP: cfg.IP,
+		MasterIP: cfg.
+			MasterIP,
 	}
+
+	conn, err := grpc.Dial(worker.MasterIP, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	client := pbm.NewMasterClient(conn)
+	worker.MasterClient = client
+	worker.MasterConn = conn
+	request := &pbm.WorkerInfo{
+		Uuid: cfg.ID,
+		Ip:   cfg.IP,
+	}
+	ack, err := client.RegisterWorker(context.Background(), request)
+	if err != nil || !ack.Success {
+		return nil, ErrUnableToRegisterWithMaster
+	}
+	return worker, nil
 }
 
 func (s *Service) GetMapTask(taskId string) (*MapTask, error) {
@@ -136,6 +162,7 @@ func (s *Service) GetIntermediateData(ctx context.Context, req *pbw.InterMediate
 
 func (s *Service) executeMapTask(taskId string) {
 	// TODO
+	// task, err := s.GetMapTask(taskId)
 }
 
 func (s *Service) executeReduceTask(taskId string) {
@@ -154,4 +181,10 @@ func (s *Service) readDataFromFile(filename string) ([]byte, error) {
 		return nil, ErrUnableToReadFile
 	}
 	return content, nil
+}
+
+func hash(s string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return h.Sum32()
 }
