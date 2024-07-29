@@ -1,11 +1,15 @@
 package worker
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"hash/fnv"
 	"io/ioutil"
+	"log"
 	"os"
+	"strings"
 	"sync"
 
 	pbm "github.com/chkda/mapreduce/rpc/master"
@@ -58,6 +62,12 @@ func New(cfg *Config) (*Service, error) {
 		return nil, ErrUnableToRegisterWithMaster
 	}
 	return worker, nil
+}
+
+func (s *Service) GetMasterClient() pbm.MasterClient {
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+	return s.MasterClient
 }
 
 func (s *Service) GetMapTask(taskId string) (*MapTask, error) {
@@ -162,11 +172,91 @@ func (s *Service) GetIntermediateData(ctx context.Context, req *pbw.InterMediate
 
 func (s *Service) executeMapTask(taskId string) {
 	// TODO
-	// task, err := s.GetMapTask(taskId)
+	task, err := s.GetMapTask(taskId)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	taskFile := task.GetTaskFile()
+	mapResult := &pbm.MapResult{
+		Uuid: taskId,
+	}
+	contentBytes, err := s.readDataFromFile(taskFile)
+	if err != nil {
+		log.Println()
+		mapResult.TaskStatus = pbm.Status_FAILED
+		go s.updateMapResult(mapResult)
+		return
+	}
+	numReduce := task.GetNumReduce()
+
+	partitionFiles := make([]string, 0, numReduce)
+	partitionWriters := make([]*bufio.Writer, 0, numReduce)
+
+	for i := 0; i < numReduce; i++ {
+		filename := fmt.Sprintf("mr-%s-%d.txt", taskId, i)
+		partitionFiles[i] = filename
+		file, err := os.Create(filename)
+		if err != nil {
+			log.Println(err)
+			mapResult.TaskStatus = pbm.Status_FAILED
+			go s.updateMapResult(mapResult)
+			return
+		}
+		defer file.Close()
+		partitionWriters[i] = bufio.NewWriter(file)
+		defer partitionWriters[i].Flush()
+	}
+
+	s.Map(taskFile, string(contentBytes), func(key, value string) {
+		partitionId := hash(key) % uint32(numReduce)
+		writer := partitionWriters[partitionId]
+		writer.WriteString(key)
+		writer.WriteByte('\t')
+		writer.WriteString(value)
+		writer.WriteByte('\n')
+	})
+
+	for _, writer := range partitionWriters {
+		err := writer.Flush()
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	task.SetOutputFiles(partitionFiles)
+	task.SetTaskStatus(COMPLETED)
+	mapResult.OutputFiles = partitionFiles
+	go s.updateMapResult(mapResult)
+
 }
 
 func (s *Service) executeReduceTask(taskId string) {
 	// TODO
+}
+
+func (s *Service) updateMapResult(result *pbm.MapResult) {
+	maxRetry := 3
+	client := s.GetMasterClient()
+	ctx := context.Background()
+	for i := 0; i < maxRetry; i++ {
+		ack, err := client.UpdateMapResult(ctx, result)
+		if err != nil || !ack.Success {
+			log.Println(err)
+			continue
+		}
+		break
+	}
+}
+
+func (s *Service) Map(key string, value string, emitIntermediatePair func(string, string)) {
+	scanner := bufio.NewScanner(strings.NewReader(value))
+	scanner.Split(bufio.ScanWords)
+
+	for scanner.Scan() {
+		word := scanner.Text()
+		emitIntermediatePair(word, "1")
+	}
 }
 
 func (s *Service) readDataFromFile(filename string) ([]byte, error) {

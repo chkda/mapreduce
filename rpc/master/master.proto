@@ -10,6 +10,13 @@ service Master{
     rpc UpdateReduceResult(ReduceResult) returns (MasterAck);
 }
 
+enum Status {
+    IDLE = 0;
+    IN_PROGRESS = 1;
+    COMPLETED = 2;
+    FAILED = 3;
+}
+
 message TaskRequest {
     
 }
@@ -21,7 +28,7 @@ message WorkerInfo {
 
 message MapResult {
     string uuid = 1;
-    string task_file = 2;
+    Status task_status = 2;
     repeated string output_files = 3;
 }
 

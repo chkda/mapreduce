@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.4.0
 // - protoc             v3.20.3
-// source: rpc/master.proto
+// source: rpc/master/master.proto
 
 package master
 
@@ -258,5 +258,5 @@ var Master_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "rpc/master.proto",
+	Metadata: "rpc/master/master.proto",
 }
