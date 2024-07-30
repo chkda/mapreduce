@@ -34,7 +34,8 @@ message MapResult {
 
 message ReduceResult {
     string uuid = 1;
-    string filename = 2;
+    Status task_status = 2;
+    string filename = 3;
 }
 
 message MasterAck{

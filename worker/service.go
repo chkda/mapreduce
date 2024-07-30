@@ -2,6 +2,7 @@ package worker
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -233,6 +234,64 @@ func (s *Service) executeMapTask(taskId string) {
 
 func (s *Service) executeReduceTask(taskId string) {
 	// TODO
+	task, err := s.GetReduceTask(taskId)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	taskFiles := task.GetTaskFiles()
+	reduceResult := &pbm.ReduceResult{
+		Uuid: taskId,
+	}
+
+	intermediateKV := make(map[string][]string)
+	for _, dataInfo := range taskFiles {
+		data, err := s.getIntermediateData(dataInfo)
+		if err != nil {
+			log.Println(err)
+			reduceResult.TaskStatus = pbm.Status_FAILED
+			go s.updateReduceResult(reduceResult)
+			return
+		}
+		s.processIntermediateData(data, intermediateKV)
+	}
+}
+
+func (s *Service) getIntermediateData(dataInfo *ReduceDataNodeInfo) ([]byte, error) {
+	if dataInfo.NodeIP == s.IP {
+		return s.readDataFromFile(dataInfo.Filename)
+	}
+	request := &pbw.InterMediateDataRequest{
+		Filename: dataInfo.Filename,
+	}
+
+	conn, err := grpc.Dial(dataInfo.NodeIP, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+
+	defer conn.Close()
+	client := pbw.NewWorkerClient(conn)
+	response, err := client.GetIntermediateData(context.Background(), request)
+	if err != nil {
+		return nil, err
+	}
+	return response.Data, nil
+}
+
+func (s *Service) processIntermediateData(data []byte, kvMap map[string][]string) {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		parts := strings.Split(scanner.Text(), "\t")
+		if len(parts) == 2 {
+			key, value := parts[0], parts[1]
+			if _, ok := kvMap[key]; !ok {
+				kvMap[key] = make([]string, 0, 5)
+			}
+			kvMap[key] = append(kvMap[key], value)
+		}
+	}
 }
 
 func (s *Service) updateMapResult(result *pbm.MapResult) {
