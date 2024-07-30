@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -256,6 +257,42 @@ func (s *Service) executeReduceTask(taskId string) {
 		}
 		s.processIntermediateData(data, intermediateKV)
 	}
+
+	outputFilename := fmt.Sprintf("mr-out-%s.txt", taskId)
+	outputFile, err := os.Create(outputFilename)
+	if err != nil {
+		log.Println(err)
+		reduceResult.TaskStatus = pbm.Status_FAILED
+		go s.updateReduceResult(reduceResult)
+		return
+	}
+	defer outputFile.Close()
+
+	writer := bufio.NewWriter(outputFile)
+	defer writer.Flush()
+
+	for key, values := range intermediateKV {
+		result := s.Reduce(key, values)
+		_, err := writer.WriteString(fmt.Sprintf("%s\t%s\n", key, result))
+		if err != nil {
+			log.Println(err)
+			reduceResult.TaskStatus = pbm.Status_FAILED
+			go s.updateReduceResult(reduceResult)
+			return
+		}
+	}
+
+	task.SetOutputFile(outputFilename)
+	task.SetTaskStatus(COMPLETED)
+
+	reduceResult.Filename = outputFilename
+	reduceResult.TaskStatus = pbm.Status_COMPLETED
+	go s.updateReduceResult(reduceResult)
+
+}
+
+func (s *Service) Reduce(key string, values []string) string {
+	return strconv.Itoa(len(values))
 }
 
 func (s *Service) getIntermediateData(dataInfo *ReduceDataNodeInfo) ([]byte, error) {
