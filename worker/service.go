@@ -104,7 +104,7 @@ func (s *Service) AddReduceTask(taskId string, task *ReduceTask) {
 	s.ReduceTasks[taskId] = task
 }
 
-func (s *Service) HealthCheck(ctx *context.Context, req *pbw.HealthcheckRequest) (*pbw.WorkerAck, error) {
+func (s *Service) HealthCheck(ctx context.Context, req *pbw.HealthcheckRequest) (*pbw.WorkerAck, error) {
 	return &pbw.WorkerAck{
 		Success: true,
 	}, nil
@@ -118,7 +118,7 @@ func (s *Service) GetTaskStatus(ctx *context.Context, req *pbw.StatusRequest) (*
 		}
 		return &pbw.StatusResponse{
 			TaskId: task.GetId(),
-			Status: pbw.Status(task.GetTaskStatus()),
+			Status: pbw.WorkerTaskStatus(task.GetTaskStatus()),
 		}, nil
 	}
 	task, err := s.GetReduceTask(req.GetTaskId())
@@ -127,7 +127,7 @@ func (s *Service) GetTaskStatus(ctx *context.Context, req *pbw.StatusRequest) (*
 	}
 	return &pbw.StatusResponse{
 		TaskId: task.GetId(),
-		Status: pbw.Status(task.GetTaskStatus()),
+		Status: pbw.WorkerTaskStatus(task.GetTaskStatus()),
 	}, nil
 }
 
@@ -187,7 +187,7 @@ func (s *Service) executeMapTask(taskId string) {
 	contentBytes, err := s.readDataFromFile(taskFile)
 	if err != nil {
 		log.Println()
-		mapResult.TaskStatus = pbm.Status_FAILED
+		mapResult.TaskStatus = pbm.MasterTaskStatus_MASTER_TASK_STATUS_FAILED
 		go s.updateMapResult(mapResult)
 		return
 	}
@@ -202,7 +202,7 @@ func (s *Service) executeMapTask(taskId string) {
 		file, err := os.Create(filename)
 		if err != nil {
 			log.Println(err)
-			mapResult.TaskStatus = pbm.Status_FAILED
+			mapResult.TaskStatus = pbm.MasterTaskStatus_MASTER_TASK_STATUS_FAILED
 			go s.updateMapResult(mapResult)
 			return
 		}
@@ -251,7 +251,7 @@ func (s *Service) executeReduceTask(taskId string) {
 		data, err := s.getIntermediateData(dataInfo)
 		if err != nil {
 			log.Println(err)
-			reduceResult.TaskStatus = pbm.Status_FAILED
+			reduceResult.TaskStatus = pbm.MasterTaskStatus_MASTER_TASK_STATUS_FAILED
 			go s.updateReduceResult(reduceResult)
 			return
 		}
@@ -262,7 +262,7 @@ func (s *Service) executeReduceTask(taskId string) {
 	outputFile, err := os.Create(outputFilename)
 	if err != nil {
 		log.Println(err)
-		reduceResult.TaskStatus = pbm.Status_FAILED
+		reduceResult.TaskStatus = pbm.MasterTaskStatus_MASTER_TASK_STATUS_FAILED
 		go s.updateReduceResult(reduceResult)
 		return
 	}
@@ -276,7 +276,7 @@ func (s *Service) executeReduceTask(taskId string) {
 		_, err := writer.WriteString(fmt.Sprintf("%s\t%s\n", key, result))
 		if err != nil {
 			log.Println(err)
-			reduceResult.TaskStatus = pbm.Status_FAILED
+			reduceResult.TaskStatus = pbm.MasterTaskStatus_MASTER_TASK_STATUS_FAILED
 			go s.updateReduceResult(reduceResult)
 			return
 		}
@@ -286,7 +286,7 @@ func (s *Service) executeReduceTask(taskId string) {
 	task.SetTaskStatus(COMPLETED)
 
 	reduceResult.Filename = outputFilename
-	reduceResult.TaskStatus = pbm.Status_COMPLETED
+	reduceResult.TaskStatus = pbm.MasterTaskStatus_MASTER_TASK_STATUS_FAILED
 	go s.updateReduceResult(reduceResult)
 
 }

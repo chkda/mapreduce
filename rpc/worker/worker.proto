@@ -10,11 +10,11 @@ service Worker{
     rpc GetIntermediateData(InterMediateDataRequest) returns (InterMediateDataResponse);
 }
 
-enum Status {
-    IDLE = 0;
-    IN_PROGRESS = 1;
-    COMPLETED = 2;
-    FAILED = 3;
+enum WorkerTaskStatus {
+  WORKER_TASK_STATUS_IDLE = 0;
+  WORKER_TASK_STATUS_IN_PROGRESS = 1;
+  WORKER_TASK_STATUS_COMPLETED = 2;
+  WORKER_TASK_STATUS_FAILED = 3;
 }
 
 enum TaskType {
@@ -28,7 +28,7 @@ message StatusRequest {
 }
 
 message StatusResponse{
-    Status status = 1;
+    WorkerTaskStatus status = 1;
     string task_id = 2;
     string error_message = 3;
 }
