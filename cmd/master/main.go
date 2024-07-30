@@ -1,12 +1,10 @@
 package main
 
 import (
-	"encoding/json"
+	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"os"
 
 	"github.com/chkda/mapreduce/master"
 	pbm "github.com/chkda/mapreduce/rpc/master"
@@ -14,29 +12,20 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-var FILE_LOC = "/config/master/config.json"
-
 func main() {
-	currDir, err := os.Getwd()
-	if err != nil {
-		panic(err)
+	port := flag.String("port", "4000", "Master GRPC port")
+	filename := flag.String("filename", "", "File to perform task")
+	numReduce := flag.Int("numreduce", 0, "No of reduce workers")
+	deadWorkersThreshold := flag.Int("dead-workers-threshold", 1, "Dead workers threshold")
+	flag.Parse()
+	if *filename == "" || *numReduce == 0 {
+		panic("null values")
 	}
-	configFile := currDir + FILE_LOC
-	file, err := os.Open(configFile)
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
-
-	fileBytes, err := io.ReadAll(file)
-	if err != nil {
-		panic(err)
-	}
-
-	config := &master.Config{}
-	err = json.Unmarshal(fileBytes, config)
-	if err != nil {
-		panic(err)
+	config := &master.Config{
+		GRPCPort:             *port,
+		Filename:             *filename,
+		NumReduce:            *numReduce,
+		DeadWorkersThreshold: *deadWorkersThreshold,
 	}
 	mrMaster := master.New(config)
 

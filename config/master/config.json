@@ -1,6 +1,0 @@
-{
-    "grpc_port":"4000",
-    "filename":"word.txt",
-    "num_reduce":4,
-    "dead_workers_threshold":1
-}
