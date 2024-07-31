@@ -1,6 +1,7 @@
 package master
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -27,7 +28,7 @@ type MapTask struct {
 
 func NewMapTask(taskFile string, workerId string, numReduce int) *MapTask {
 	return &MapTask{
-		ID:         uuid.NewString(),
+		ID:         strings.ReplaceAll(uuid.NewString(), "-", ""),
 		TaskFile:   taskFile,
 		WorkerID:   workerId,
 		TaskStatus: IDLE,

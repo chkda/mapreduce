@@ -189,7 +189,7 @@ func (s *Service) UpdateMapResult(ctx context.Context, mapResult *pbm.MapResult)
 	}
 	mapTask.SetTaskStatus(COMPLETE)
 	mapTask.SetOutputFiles(mapResult.GetOutputFiles())
-	s.IncActiveMapTasks()
+	s.DecActiveMapTasks()
 	s.notifyMapChannels(mapTaskId)
 	return &pbm.MasterAck{
 		Success: true,
@@ -204,7 +204,7 @@ func (s *Service) UpdateReduceResult(ctx context.Context, reduceResult *pbm.Redu
 	}
 	reduceTask.SetTaskStatus(COMPLETE)
 	reduceTask.SetOutputFile(reduceResult.GetFilename())
-	s.IncActiveMapTasks()
+	s.DecActiveReduceTasks()
 	s.notifyReduceChannels(reduceTaskId)
 	return &pbm.MasterAck{
 		Success: true,

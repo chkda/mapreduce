@@ -42,10 +42,11 @@ type Service struct {
 func New(cfg *Config) (*Service, error) {
 
 	worker := &Service{
-		ID: cfg.ID,
-		IP: cfg.IP,
-		MasterIP: cfg.
-			MasterIP,
+		ID:          cfg.ID,
+		IP:          cfg.IP,
+		MasterIP:    cfg.MasterIP,
+		MapTasks:    make(map[string]*MapTask),
+		ReduceTasks: make(map[string]*ReduceTask),
 	}
 
 	conn, err := grpc.Dial(worker.MasterIP, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -192,13 +193,12 @@ func (s *Service) executeMapTask(taskId string) {
 		return
 	}
 	numReduce := task.GetNumReduce()
-
 	partitionFiles := make([]string, 0, numReduce)
 	partitionWriters := make([]*bufio.Writer, 0, numReduce)
 
 	for i := 0; i < numReduce; i++ {
 		filename := fmt.Sprintf("mr-%s-%d.txt", taskId, i)
-		partitionFiles[i] = filename
+		partitionFiles = append(partitionFiles, filename)
 		file, err := os.Create(filename)
 		if err != nil {
 			log.Println(err)
@@ -207,7 +207,7 @@ func (s *Service) executeMapTask(taskId string) {
 			return
 		}
 		defer file.Close()
-		partitionWriters[i] = bufio.NewWriter(file)
+		partitionWriters = append(partitionWriters, bufio.NewWriter(file))
 		defer partitionWriters[i].Flush()
 	}
 

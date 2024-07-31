@@ -1,6 +1,7 @@
 package master
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -17,7 +18,7 @@ type ReduceTask struct {
 
 func NewReduceTask(taskFiles []*ReduceDataNodeInfo, workerId string) *ReduceTask {
 	return &ReduceTask{
-		ID:         uuid.NewString(),
+		ID:         strings.ReplaceAll(uuid.NewString(), "-", ""),
 		TaskFiles:  taskFiles,
 		WorkerID:   workerId,
 		TaskStatus: IDLE,

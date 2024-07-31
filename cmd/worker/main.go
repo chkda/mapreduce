@@ -22,6 +22,7 @@ func main() {
 		panic("null values")
 	}
 	config := &worker.Config{
+		ID:       *workerId,
 		GRPCPort: *port,
 		MasterIP: *masterIP,
 		IP:       *ip + ":" + *port,
