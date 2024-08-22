@@ -2,6 +2,8 @@ package maptask
 
 import (
 	"testing"
+
+	"github.com/chkda/mapreduce/internal/status"
 )
 
 func TestNew(t *testing.T) {
@@ -11,7 +13,7 @@ func TestNew(t *testing.T) {
 		t.Errorf("Expected non empty taskId")
 	}
 
-	if task.taskStatus != IDLE {
+	if task.taskStatus != status.IDLE {
 		t.Errorf("Expected idle taskStatus")
 	}
 

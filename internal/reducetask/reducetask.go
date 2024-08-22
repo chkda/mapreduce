@@ -1,30 +1,29 @@
-package maptask
+package reducetask
 
 import (
 	"strings"
 	"sync"
 
+	"github.com/chkda/mapreduce/internal/datanodes"
 	"github.com/chkda/mapreduce/internal/status"
 	"github.com/google/uuid"
 )
 
-type Option func(s *Task)
-
 type Task struct {
-	mu          sync.RWMutex
-	taskId      string
-	workerId    string
-	taskFile    string
-	numReduce   int
-	taskStatus  status.TaskStatus
-	outputFiles []string
+	taskId     string
+	mu         sync.RWMutex
+	taskFiles  []*datanodes.ReduceDataNodeInfo
+	workerId   string
+	taskStatus status.TaskStatus
+	outputFile string
 }
+
+type Option func(s *Task)
 
 func New(opts ...Option) *Task {
 	task := &Task{
-		taskId:      strings.ReplaceAll(uuid.NewString(), "-", ""),
-		taskStatus:  status.IDLE,
-		outputFiles: make([]string, 0),
+		taskId:     strings.ReplaceAll(uuid.NewString(), "-", ""),
+		taskStatus: status.IDLE,
 	}
 
 	for _, opt := range opts {
@@ -46,15 +45,9 @@ func WithWorkerId(id string) Option {
 	}
 }
 
-func WithTaskFile(fileName string) Option {
+func WithTaskFiles(files []*datanodes.ReduceDataNodeInfo) Option {
 	return func(s *Task) {
-		s.taskFile = fileName
-	}
-}
-
-func WithNumReduce(numReduce int) Option {
-	return func(s *Task) {
-		s.numReduce = numReduce
+		s.taskFiles = files
 	}
 }
 
@@ -62,16 +55,12 @@ func (s *Task) GetTaskId() string {
 	return s.taskId
 }
 
-func (s *Task) GetTaskFile() string {
-	return s.taskFile
+func (s *Task) GetTaskFiles() []*datanodes.ReduceDataNodeInfo {
+	return s.taskFiles
 }
 
 func (s *Task) GetWorkerId() string {
 	return s.workerId
-}
-
-func (s *Task) GetNumReduce() int {
-	return s.numReduce
 }
 
 func (s *Task) GetTaskStatus() status.TaskStatus {
@@ -86,14 +75,14 @@ func (s *Task) SetTaskStatus(status status.TaskStatus) {
 	s.mu.Unlock()
 }
 
-func (s *Task) GetOutputFiles() []string {
+func (s *Task) GetOutputFile() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.outputFiles
+	return s.outputFile
 }
 
-func (s *Task) SetOutputFiles(files []string) {
+func (s *Task) SetOutputFile(files string) {
 	s.mu.Lock()
-	s.outputFiles = files
+	s.outputFile = files
 	s.mu.Unlock()
 }
